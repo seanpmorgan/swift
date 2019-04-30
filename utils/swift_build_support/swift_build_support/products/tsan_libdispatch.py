@@ -26,14 +26,33 @@ class TSanLibDispatch(product.Product):
         return False
 
     def build(self, host_target):
-        """We reuse the llvm build directory."""
-        # Clang is already built. TSan runtime will be built by 'check-tsan' in
-        # test step.
-        pass
+        """Build TSan runtime (compiler-rt)."""
+        rt_source_dir = os.path.join(self.source_dir, '../compiler-rt')
+        libdispatch_path = os.path.join(self.args.install_destdir, 'usr')
+        llvm_build_dir = os.path.join(self.build_dir, '../llvm-' + host_target)
+        cc_path = os.path.join(llvm_build_dir, 'bin/clang')
+        cxx_path = os.path.join(llvm_build_dir, 'bin/clang++')
+
+        cmd = [
+            'cmake',
+            '-GNinja',
+            '-B%s' % self.build_dir,
+            '-DCMAKE_PREFIX_PATH=%s' % llvm_build_dir,
+            '-DCMAKE_C_COMPILER=%s' % cc_path,
+            '-DCMAKE_CXX_COMPILER=%s' % cxx_path,
+            '-DCMAKE_BUILD_TYPE=Release',
+            '-DLLVM_ENABLE_ASSERTIONS=ON',
+            '-DCOMPILER_RT_INCLUDE_TESTS=ON',
+            '-DCOMPILER_RT_INTERCEPT_LIBDISPATCH=ON',
+            '-DCOMPILER_RT_LIBDISPATCH_INSTALL_PATH=%s' % libdispatch_path,
+            rt_source_dir]
+        shell.call(cmd)
+
+        cmd = ['cmake', '--build', self.build_dir, '--target', 'tsan']
+        shell.call(cmd)
 
     def test(self, host_target):
         """Run check-tsan target with a LIT filter for libdispatch."""
-        llvm_build_dir = os.path.join(self.build_dir, '..', 'llvm-'+host_target)
-        cmd = ['cmake', '--build', llvm_build_dir, '--target', 'check-tsan']
+        cmd = ['cmake', '--build', self.build_dir, '--target', 'check-tsan']
         env = {'LIT_FILTER': 'libdispatch'}
         shell.call(cmd, env=env)
